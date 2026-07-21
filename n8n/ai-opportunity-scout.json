@@ -1,0 +1,151 @@
+{
+  "name": "AI Opportunity Scout",
+  "nodes": [
+    {
+      "id": "trigger1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 8,18 * * *" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rss1",
+      "name": "Hacker News",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [260, 0],
+      "parameters": { "url": "https://hnrss.org/frontpage" }
+    },
+    {
+      "id": "rss2",
+      "name": "arXiv cs.AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [260, 150],
+      "parameters": { "url": "https://rss.arxiv.org/rss/cs.AI" }
+    },
+    {
+      "id": "rss3",
+      "name": "GitHub Trending",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [260, 300],
+      "parameters": { "url": "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml" }
+    },
+    {
+      "id": "rss4",
+      "name": "Product Hunt",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [260, 450],
+      "parameters": { "url": "https://www.producthunt.com/feed" }
+    },
+    {
+      "id": "rss5",
+      "name": "Reddit ML",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [260, 600],
+      "parameters": { "url": "https://www.reddit.com/r/MachineLearning/top/.rss?t=day" }
+    },
+    {
+      "id": "merge1",
+      "name": "Merge 1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [520, 75],
+      "parameters": { "mode": "append", "numberInputs": 2 }
+    },
+    {
+      "id": "merge2",
+      "name": "Merge 2",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [780, 187],
+      "parameters": { "mode": "append", "numberInputs": 2 }
+    },
+    {
+      "id": "merge3",
+      "name": "Merge 3",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1040, 318],
+      "parameters": { "mode": "append", "numberInputs": 2 }
+    },
+    {
+      "id": "merge4",
+      "name": "Merge 4",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1300, 459],
+      "parameters": { "mode": "append", "numberInputs": 2 }
+    },
+    {
+      "id": "code1",
+      "name": "Filter & Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 459],
+      "parameters": {
+        "jsCode": "const KEYWORDS = ['ai','llm','gpt','claude','gemini','model','api','open-source','open source','launch','release','agent','automation','funding','raised','yc ','y combinator','tool','sdk','framework','startup'];\n\nconst LOOKBACK_HOURS = 14; // a little over the 12h gap between runs to avoid missing items\nconst now = Date.now();\nconst windowMs = LOOKBACK_HOURS * 60 * 60 * 1000;\n\nconst items = $input.all().map(i => i.json).filter(i => i.title);\n\nconst scored = items.map(item => {\n  const text = ((item.title || '') + ' ' + (item.contentSnippet || item.content || item.summary || '')).toLowerCase();\n  let score = 0;\n  for (const kw of KEYWORDS) if (text.includes(kw)) score++;\n  const pubDate = item.isoDate || item.pubDate;\n  const ts = pubDate ? new Date(pubDate).getTime() : now;\n  const recent = (now - ts) <= windowMs;\n  return { title: item.title, link: item.link, score, recent, ts, source: item.source || '' };\n});\n\nconst seen = new Set();\nconst filtered = scored\n  .filter(i => i.recent && i.score >= 2)\n  .filter(i => { const k = i.title.toLowerCase().trim(); if (seen.has(k)) return false; seen.add(k); return true; })\n  .sort((a, b) => b.score - a.score || b.ts - a.ts)\n  .slice(0, 10);\n\nreturn filtered.map(i => ({ json: i }));"
+      }
+    },
+    {
+      "id": "code2",
+      "name": "Build Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1820, 459],
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nif (items.length === 0) return [];\n\nconst rows = items.map(i => `<li><a href=\"${i.link}\">${i.title}</a> (score ${i.score})</li>`).join('');\nconst html = `<h2>AI Opportunity Digest — ${new Date().toLocaleString()}</h2><ul>${rows}</ul>`;\n\nreturn [{ json: { subject: `AI Opportunity Digest: ${items.length} finds`, html } }];"
+      }
+    },
+    {
+      "id": "email1",
+      "name": "Send Digest Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2080, 459],
+      "parameters": {
+        "fromEmail": "matthanna01@gmail.com",
+        "toEmail": "matthanna01@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Hacker News", "type": "main", "index": 0 },
+          { "node": "arXiv cs.AI", "type": "main", "index": 0 },
+          { "node": "GitHub Trending", "type": "main", "index": 0 },
+          { "node": "Product Hunt", "type": "main", "index": 0 },
+          { "node": "Reddit ML", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Hacker News": { "main": [[{ "node": "Merge 1", "type": "main", "index": 0 }]] },
+    "arXiv cs.AI": { "main": [[{ "node": "Merge 1", "type": "main", "index": 1 }]] },
+    "Merge 1": { "main": [[{ "node": "Merge 2", "type": "main", "index": 0 }]] },
+    "GitHub Trending": { "main": [[{ "node": "Merge 2", "type": "main", "index": 1 }]] },
+    "Merge 2": { "main": [[{ "node": "Merge 3", "type": "main", "index": 0 }]] },
+    "Product Hunt": { "main": [[{ "node": "Merge 3", "type": "main", "index": 1 }]] },
+    "Merge 3": { "main": [[{ "node": "Merge 4", "type": "main", "index": 0 }]] },
+    "Reddit ML": { "main": [[{ "node": "Merge 4", "type": "main", "index": 1 }]] },
+    "Merge 4": { "main": [[{ "node": "Filter & Score", "type": "main", "index": 0 }]] },
+    "Filter & Score": { "main": [[{ "node": "Build Digest", "type": "main", "index": 0 }]] },
+    "Build Digest": { "main": [[{ "node": "Send Digest Email", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
