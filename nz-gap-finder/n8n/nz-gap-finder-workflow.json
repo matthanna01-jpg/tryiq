@@ -1,0 +1,185 @@
+{
+  "name": "NZ Gap Finder — Weekly Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule (Mon 8am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-opus-4-8\",\n  max_tokens: 8000,\n  system: \"You are running the recurring 'NZ Gap Finder' research process. Goal: find empty niches and underserved needs in New Zealand across four categories, and write a ranked, evidence-based digest.\\n\\nCATEGORIES\\n1. Business/product gaps — goods or services NZ relies on imports for, or where local supply is thin relative to demand.\\n2. Startup/software gaps — SaaS/product categories common overseas with no good NZ-specific equivalent, or ecosystem-support gaps for founders.\\n3. Public/social gaps — infrastructure, housing, healthcare, and other public-good shortfalls documented by government or research bodies.\\n4. Job market gaps — occupations with sustained shortages (Immigration NZ Green List, MBIE labour reports) — these often point to an adjacent business opportunity, not just a hiring problem.\\n\\nSOURCES TO FAVOUR: Stats NZ, MBIE, Treasury / Te Waihanga (Infrastructure Commission), Immigration NZ Green List, HUD/Ministry of Housing, NZ Initiative and other think-tank research, recruiter reports (Hays etc.), NZ startup-ecosystem press.\\n\\nSCORING: for each candidate, give Demand / Supply-gap / Feasibility scores 1-3, and a confidence label — Low/Medium/High — where High means the signal shows up independently in 2+ categories or sources.\\n\\nOUTPUT FORMAT (markdown, output ONLY this, no preamble or wrapper text):\\n# NZ Gap Finder — Digest for <today's date>\\n\\n## Top candidates this week\\n(3-5 ranked candidates, each with a one-line why, confidence label, D/S/F scores, and a short 'angle' line)\\n\\n## Weak-evidence / needs deeper data\\n(anything you looked for but couldn't confirm)\\n\\n## Sources\\n(markdown links to every URL actually used)\",\n  tools: [\n    { type: \"web_search_20260209\", name: \"web_search\", max_uses: 15 }\n  ],\n  messages: [\n    {\n      role: \"user\",\n      content: \"Today's date is \" + $now.toFormat('yyyy-LL-dd') + \". Research current New Zealand gap signals across all four categories using web search, then write the digest in the exact format specified in the system prompt.\"\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "http-claude",
+      "name": "Claude: Research + Write Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Anthropic API Key (x-api-key)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $input.first().json.content || [];\nconst text = content.filter(b => b.type === 'text').map(b => b.text).join('\\n\\n').trim();\nconst date = new Date().toISOString().slice(0, 10);\nreturn [{\n  json: {\n    report_markdown: text,\n    report_date: date,\n    file_path: `nz-gap-finder/reports/${date}.md`,\n    commit_message: `NZ Gap Finder digest for ${date}`\n  }\n}];"
+      },
+      "id": "extract-report",
+      "name": "Extract Report Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "value": "matthanna01-jpg",
+          "mode": "list"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "tryiq",
+          "mode": "list"
+        },
+        "filePath": "={{ $json.file_path }}",
+        "fileContent": "={{ $json.report_markdown }}",
+        "commitMessage": "={{ $json.commit_message }}",
+        "additionalParameters": {
+          "branch": {
+            "branch": "claude/nz-market-gap-finder-4tdwxh"
+          }
+        }
+      },
+      "id": "github-commit",
+      "name": "Commit Report to GitHub",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -80
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "matthanna01@gmail.com",
+        "subject": "=NZ Gap Finder digest — {{ $json.report_date }}",
+        "emailFormat": "text",
+        "text": "={{ $json.report_markdown }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Email Me the Digest",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        320,
+        80
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Mon 8am)": {
+      "main": [
+        [
+          {
+            "node": "Claude: Research + Write Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Research + Write Digest": {
+      "main": [
+        [
+          {
+            "node": "Extract Report Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Report Text": {
+      "main": [
+        [
+          {
+            "node": "Commit Report to GitHub",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Me the Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Pacific/Auckland",
+    "executionOrder": "v1"
+  }
+}
